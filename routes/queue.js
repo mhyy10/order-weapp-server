@@ -22,6 +22,10 @@ router.post('/join', (req, res) => {
     createdAt: new Date().toISOString()
   }
   db.push('queues', item)
+  // WebSocket 推送：新排队通知
+  if (req.io) {
+    req.io.emit('queue:new', { queueNo, position: item.position, userId: parseInt(userId) })
+  }
   success(res, item)
 })
 

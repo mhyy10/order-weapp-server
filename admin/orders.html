@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小灶点餐 - 订单管理</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <h2>🏪 小灶后台</h2>
+    <a href="dashboard.html">📊 数据看板</a>
+    <a href="dishes.html">🍽 菜品管理</a>
+    <a href="orders.html" class="active">📋 订单管理</a>
+    <a href="reviews.html">⭐ 评价管理</a>
+    <a href="coupons.html">🎫 优惠券管理</a>
+    <a href="#" onclick="logout()" style="margin-top:40px;color:#666;">🚪 退出登录</a>
+  </nav>
+  <div class="main">
+    <h1>订单管理</h1>
+    <div style="margin-bottom:16px;display:flex;gap:8px;">
+      <button class="btn btn-primary" onclick="loadOrders()">全部</button>
+      <button class="btn btn-outline" onclick="loadOrders('pending')">待接单</button>
+      <button class="btn btn-outline" onclick="loadOrders('confirmed')">制作中</button>
+      <button class="btn btn-outline" onclick="loadOrders('ready')">可取餐</button>
+      <button class="btn btn-outline" onclick="loadOrders('completed')">已完成</button>
+    </div>
+    <div class="table-wrap"><div id="order-list"></div></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+if (!adminToken) location.href = 'index.html';
+
+const statusMap = {pending:'待接单',confirmed:'制作中',ready:'可取餐',completed:'已完成',cancelled:'已取消'};
+const nextStatus = {pending:'confirmed',confirmed:'ready',ready:'completed'};
+const nextLabel = {pending:'接单',confirmed:'出餐',ready:'确认完成'};
+
+async function loadOrders(status) {
+  const url = status ? `/admin/orders?status=${status}&pageSize=50` : '/admin/orders?pageSize=50';
+  const data = await api('GET', url);
+  renderTable('order-list', ['订单号','桌号','金额','状态','菜品','时间','操作'],
+    data.orders, o => {
+      const items = (o.items||[]).map(i=>i.name+'×'+i.quantity).join(', ');
+      let actions = `<span class="badge badge-${o.status}">${statusMap[o.status]||o.status}</span>`;
+      if (nextStatus[o.status]) {
+        actions += ` <button class="btn btn-sm btn-primary" onclick="updateStatus('${o.id}','${nextStatus[o.status]}')">${nextLabel[o.status]}</button>`;
+      }
+      if (o.status==='pending') actions += ` <button class="btn btn-sm btn-danger" onclick="updateStatus('${o.id}','cancelled')">取消</button>`;
+      return `<td>${o.id}</td><td>${o.tableNo||'-'}</td><td>${fmtPrice(o.total)}</td><td>${actions}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${items}</td><td>${fmtDate(o.createdAt)}</td><td></td>`;
+    });
+}
+
+async function updateStatus(id, status) { await api('PUT', '/admin/orders', { id, status }); loadOrders(); }
+function logout() { localStorage.removeItem('adminToken'); location.href = 'index.html'; }
+
+loadOrders();
+</script>
+</body>
+</html>

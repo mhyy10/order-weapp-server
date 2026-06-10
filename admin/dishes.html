@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小灶点餐 - 菜品管理</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <h2>🏪 小灶后台</h2>
+    <a href="dashboard.html">📊 数据看板</a>
+    <a href="dishes.html" class="active">🍽 菜品管理</a>
+    <a href="orders.html">📋 订单管理</a>
+    <a href="reviews.html">⭐ 评价管理</a>
+    <a href="coupons.html">🎫 优惠券管理</a>
+    <a href="#" onclick="logout()" style="margin-top:40px;color:#666;">🚪 退出登录</a>
+  </nav>
+  <div class="main">
+    <h1>菜品管理</h1>
+    <div class="table-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <span id="count"></span>
+        <button class="btn btn-primary" onclick="showAdd()">+ 添加菜品</button>
+      </div>
+      <div id="dish-list"></div>
+    </div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+if (!adminToken) location.href = 'index.html';
+
+async function loadDishes() {
+  const dishes = await api('GET', '/admin/dishes');
+  document.getElementById('count').textContent = `共 ${dishes.length} 道菜`;
+  renderTable('dish-list', ['ID','名称','分类','价格','月销','上架','操作'],
+    dishes, d => `<td>${d.id}</td><td>${d.name}</td><td>${d.categoryName}</td>
+      <td>${fmtPrice(d.price)}</td><td>${d.sales}</td>
+      <td><span class="badge ${d.isAvailable?'badge-available':'badge-used'}">${d.isAvailable?'上架':'下架'}</span></td>
+      <td><button class="btn btn-sm btn-outline" onclick="toggleAvail(${d.id},${!d.isAvailable})">${d.isAvailable?'下架':'上架'}</button>
+      <button class="btn btn-sm btn-danger" onclick="delDish(${d.id})">删除</button></td>`);
+}
+
+async function showAdd() {
+  const name = prompt('菜品名称:');
+  if (!name) return;
+  const price = parseFloat(prompt('价格:')) || 0;
+  const categoryId = parseInt(prompt('分类ID (1推荐 2热菜 3凉菜 4主食 5汤羹 6小食 7饮品 8甜品):')) || 1;
+  await api('POST', '/admin/dishes', { name, price, categoryId, description: '', specs: [], addons: [], tags: [], isRecommended: false, originalPrice: 0 });
+  loadDishes();
+}
+
+async function toggleAvail(id, val) { await api('PUT', '/admin/dishes', { id, isAvailable: val }); loadDishes(); }
+async function delDish(id) { if(confirm('确定删除?')){await api('DELETE', '/admin/dishes', { id }); loadDishes();} }
+function logout() { localStorage.removeItem('adminToken'); location.href = 'index.html'; }
+
+loadDishes();
+</script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小灶点餐 - 数据看板</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <h2>🏪 小灶后台</h2>
+    <a href="dashboard.html" class="active">📊 数据看板</a>
+    <a href="dishes.html">🍽 菜品管理</a>
+    <a href="orders.html">📋 订单管理</a>
+    <a href="reviews.html">⭐ 评价管理</a>
+    <a href="coupons.html">🎫 优惠券管理</a>
+    <a href="#" onclick="logout()" style="margin-top:40px;color:#666;">🚪 退出登录</a>
+  </nav>
+  <div class="main">
+    <h1>数据看板</h1>
+    <div class="stats" id="stats"></div>
+    <div class="table-wrap">
+      <h3 style="margin-bottom:16px;">最近订单</h3>
+      <div id="recent-orders"></div>
+    </div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+if (!adminToken) location.href = 'index.html';
+
+async function loadStats() {
+  const s = await api('GET', '/admin/stats');
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="label">今日订单</div><div class="value orange">${s.todayOrders}</div></div>
+    <div class="stat-card"><div class="label">今日营收</div><div class="value green">${fmtPrice(s.todayRevenue)}</div></div>
+    <div class="stat-card"><div class="label">待接单</div><div class="value red">${s.pendingOrders}</div></div>
+    <div class="stat-card"><div class="label">排队中</div><div class="value">${s.waitingQueues}</div></div>
+    <div class="stat-card"><div class="label">菜品总数</div><div class="value">${s.totalDishes}</div></div>
+    <div class="stat-card"><div class="label">累计订单</div><div class="value">${s.totalOrders}</div></div>`;
+}
+
+async function loadRecentOrders() {
+  const data = await api('GET', '/admin/orders?pageSize=10');
+  const statusMap = {pending:'待接单',confirmed:'制作中',ready:'可取餐',completed:'已完成',cancelled:'已取消'};
+  renderTable('recent-orders', ['订单号','桌号','金额','状态','时间'],
+    data.orders, o => `<td>${o.id}</td><td>${o.tableNo||'-'}</td><td>${fmtPrice(o.total)}</td>
+      <td><span class="badge badge-${o.status}">${statusMap[o.status]||o.status}</span></td><td>${fmtDate(o.createdAt)}</td>`);
+}
+
+function logout() { localStorage.removeItem('adminToken'); location.href = 'index.html'; }
+
+loadStats(); loadRecentOrders();
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+/* 管理后台统一样式 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, 'PingFang SC', sans-serif; background: #f5f5f5; color: #1a1a1a; font-size: 14px; }
+
+/* 登录 */
+.login-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #FF6B35, #FF8F5E); }
+.login-box { background: #fff; border-radius: 16px; padding: 48px 40px; width: 400px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
+.login-box h1 { font-size: 28px; text-align: center; margin-bottom: 32px; color: #1a1a1a; }
+.login-box input { width: 100%; padding: 14px 16px; border: 1px solid #e5e5e5; border-radius: 8px; font-size: 16px; margin-bottom: 16px; outline: none; }
+.login-box input:focus { border-color: #FF6B35; }
+.login-box button { width: 100%; padding: 14px; background: linear-gradient(135deg, #FF6B35, #FF8F5E); color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+.login-box button:hover { opacity: 0.9; }
+
+/* 布局 */
+.layout { display: flex; min-height: 100vh; }
+.sidebar { width: 220px; background: #1a1a1a; color: #fff; padding: 24px 0; flex-shrink: 0; }
+.sidebar h2 { font-size: 20px; padding: 0 24px 24px; border-bottom: 1px solid #333; }
+.sidebar a { display: block; padding: 14px 24px; color: #999; text-decoration: none; font-size: 15px; transition: all 0.2s; }
+.sidebar a:hover, .sidebar a.active { color: #FF6B35; background: rgba(255,107,53,0.1); }
+.main { flex: 1; padding: 24px 32px; overflow-y: auto; }
+.main h1 { font-size: 24px; font-weight: 700; margin-bottom: 24px; }
+
+/* 统计卡片 */
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+.stat-card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.stat-card .label { font-size: 13px; color: #999; margin-bottom: 8px; }
+.stat-card .value { font-size: 32px; font-weight: 800; color: #1a1a1a; }
+.stat-card .value.orange { color: #FF6B35; }
+.stat-card .value.green { color: #52C41A; }
+.stat-card .value.red { color: #FF4D4F; }
+
+/* 表格 */
+.table-wrap { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+th { font-weight: 600; color: #666; font-size: 13px; }
+tr:hover { background: #fafafa; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.badge-pending { background: #FFF0E6; color: #FF9500; }
+.badge-confirmed { background: #E6F7FF; color: #1890FF; }
+.badge-ready { background: #F0FFF0; color: #52C41A; }
+.badge-completed { background: #F5F5F5; color: #999; }
+.badge-cancelled { background: #FFF1F0; color: #FF4D4F; }
+.badge-available { background: #F0FFF0; color: #52C41A; }
+.badge-used { background: #F5F5F5; color: #999; }
+
+/* 按钮 */
+.btn { padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 500; }
+.btn-primary { background: #FF6B35; color: #fff; }
+.btn-primary:hover { opacity: 0.85; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-outline { background: transparent; border: 1px solid #FF6B35; color: #FF6B35; }
+.btn-danger { background: #FF4D4F; color: #fff; }
+
+/* 空状态 */
+.empty { text-align: center; padding: 60px 0; color: #999; }
+.empty p { margin-top: 12px; }

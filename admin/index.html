@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小灶点餐 - 管理后台</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="common.js"></script>
+<script>
+// 登录检查
+if (!adminToken) {
+  document.getElementById('app').innerHTML = `
+    <div class="login-wrap">
+      <div class="login-box">
+        <h1>🏪 小灶管理后台</h1>
+        <input id="username" placeholder="用户名" value="admin">
+        <input id="password" type="password" placeholder="密码" value="admin123">
+        <button onclick="doLogin()">登 录</button>
+      </div>
+    </div>`;
+} else {
+  location.href = 'dashboard.html';
+}
+
+async function doLogin() {
+  try {
+    const data = await api('POST', '/admin/login', {
+      username: document.getElementById('username').value,
+      password: document.getElementById('password').value
+    });
+    adminToken = data.token;
+    localStorage.setItem('adminToken', adminToken);
+    location.href = 'dashboard.html';
+  } catch (e) { alert('登录失败: ' + e.message); }
+}
+</script>
+</body>
+</html>

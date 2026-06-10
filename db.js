@@ -9,7 +9,15 @@ const DEFAULT_DB = {
   orders: [],
   carts: {},
   favorites: [],
-  queues: []
+  queues: [],
+  coupons: [
+    { id: 1, name: '新客满50减10', type: 'reduction', value: 10, threshold: 50, startDate: '2026-01-01', endDate: '2026-12-31', total: 1000, claimed: 0, isActive: true },
+    { id: 2, name: '满100减20', type: 'reduction', value: 20, threshold: 100, startDate: '2026-01-01', endDate: '2026-12-31', total: 500, claimed: 0, isActive: true },
+    { id: 3, name: '全场8折券', type: 'discount', value: 0.8, threshold: 30, startDate: '2026-01-01', endDate: '2026-12-31', total: 200, claimed: 0, isActive: true }
+  ],
+  userCoupons: [],
+  reviews: [],
+  admins: [{ id: 1, username: 'admin', password: 'admin123', name: '店长' }]
 }
 
 class Database {

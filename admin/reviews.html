@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>小灶点餐 - 评价管理</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <h2>🏪 小灶后台</h2>
+    <a href="dashboard.html">📊 数据看板</a>
+    <a href="dishes.html">🍽 菜品管理</a>
+    <a href="orders.html">📋 订单管理</a>
+    <a href="reviews.html" class="active">⭐ 评价管理</a>
+    <a href="coupons.html">🎫 优惠券管理</a>
+    <a href="#" onclick="logout()" style="margin-top:40px;color:#666;">🚪 退出登录</a>
+  </nav>
+  <div class="main">
+    <h1>评价管理</h1>
+    <div class="table-wrap"><div id="review-list"></div></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+if (!adminToken) location.href = 'index.html';
+
+async function loadReviews() {
+  const reviews = await api('GET', '/admin/reviews');
+  if (!reviews.length) { document.getElementById('review-list').innerHTML = '<div class="empty"><p>暂无评价</p></div>'; return; }
+  const avgRating = (reviews.reduce((s,r)=>s+r.rating,0)/reviews.length).toFixed(1);
+  document.getElementById('review-list').innerHTML = `
+    <div style="margin-bottom:16px;font-size:16px;">平均评分: <b style="color:#FFB800;font-size:24px;">${avgRating}</b> / 5 共 ${reviews.length} 条评价</div>
+    <table><thead><tr><th>用户</th><th>评分</th><th>标签</th><th>内容</th><th>时间</th></tr></thead><tbody>
+    ${reviews.map(r => `<tr>
+      <td>${r.nickname}</td>
+      <td style="color:#FFB800;font-weight:700;">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</td>
+      <td>${(r.tags||[]).map(t=>`<span class="badge badge-pending">${t}</span>`).join(' ')}</td>
+      <td>${r.content||'-'}</td>
+      <td>${fmtDate(r.createdAt)}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function logout() { localStorage.removeItem('adminToken'); location.href = 'index.html'; }
+
+loadReviews();
+</script>
+</body>
+</html>
