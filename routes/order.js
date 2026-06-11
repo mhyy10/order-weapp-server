@@ -48,140 +48,177 @@ function calculateOrderTotal(items) {
 }
 
 router.post('/create', (req, res) => {
-  const { userId, tableNo, dineType, peopleCount, items, note, userCouponId } = req.body
-  if (!userId || !items || items.length === 0) return error(req, res, '缺少必要参数')
+  try {
+    const { userId, tableNo, dineType, peopleCount, items, note, userCouponId } = req.body
+    if (!userId) return error(req, res, '缺少必填参数: userId')
+    if (!items || !Array.isArray(items) || items.length === 0) return error(req, res, '缺少必填参数: items(数组且非空)')
+    if (!tableNo) return error(req, res, '缺少必填参数: tableNo')
 
-  // 数值校验
-  const qty = parseInt(peopleCount) || 1
-  if (qty < 1 || qty > 50) return error(req, res, '人数不合法')
+    // 数值校验
+    const qty = parseInt(peopleCount) || 1
+    if (qty < 1 || qty > 50) return error(req, res, '人数不合法')
 
-  // 后端重新计算价格，防止前端篡改
-  const subtotal = calculateOrderTotal(items)
-  let couponDiscount = 0
-  let couponId = null
+    // 后端重新计算价格，防止前端篡改
+    const subtotal = calculateOrderTotal(items)
+    let couponDiscount = 0
+    let couponId = null
 
-  // 优惠券计算
-  if (userCouponId) {
-    const uc = db.find('userCoupons', uc => uc.id == userCouponId && uc.userId == userId && uc.status === 'available')
-    if (uc) {
-      const coupon = db.find('coupons', c => c.id === uc.couponId)
-      if (coupon && coupon.isActive) {
-        if (coupon.type === 'reduction' && subtotal >= coupon.threshold) {
-          couponDiscount = coupon.value
-          couponId = coupon.id
-        } else if (coupon.type === 'discount' && subtotal >= coupon.threshold) {
-          couponDiscount = Math.round(subtotal * (1 - coupon.value))
-          couponId = coupon.id
+    // 优惠券计算
+    if (userCouponId) {
+      const uc = db.find('userCoupons', uc => uc.id == userCouponId && uc.userId == userId && uc.status === 'available')
+      if (uc) {
+        const coupon = db.find('coupons', c => c.id === uc.couponId)
+        if (coupon && coupon.isActive) {
+          if (coupon.type === 'reduction' && subtotal >= coupon.threshold) {
+            couponDiscount = coupon.value
+            couponId = coupon.id
+          } else if (coupon.type === 'discount' && subtotal >= coupon.threshold) {
+            couponDiscount = Math.round(subtotal * (1 - coupon.value))
+            couponId = coupon.id
+          }
         }
       }
     }
+
+    const baseDiscount = subtotal >= 100 ? 5 : 0
+    const serviceFee = dineType === 'dine_in' ? qty * 3 : 0
+    const total = subtotal - baseDiscount - couponDiscount + serviceFee
+
+    const now = new Date()
+    const orderId = 'ORD' + now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0') + String(Math.floor(Math.random()*1000)).padStart(3,'0')
+    const order = {
+      id: orderId,
+      userId: parseInt(userId),
+      tableNo: tableNo || '',
+      dineType: dineType || 'dine_in',
+      peopleCount: qty,
+      items,
+      subtotal,
+      discount: baseDiscount,
+      couponDiscount,
+      couponId,
+      total,
+      note: note || '',
+      status: 'pending',
+      createdAt: now.toISOString()
+    }
+    db.push('orders', order)
+
+    // 使用优惠券
+    if (userCouponId && couponDiscount > 0) {
+      useCoupon(userCouponId, orderId)
+    }
+
+    // Clear cart
+    const carts = db.get('carts') || {}
+    carts[userId] = []
+    db.set('carts', carts)
+
+    // WebSocket 推送：新订单通知
+    notify(req, null, 'order:new', { orderId, userId: parseInt(userId), tableNo, total })
+
+    success(res, order)
+  } catch (err) {
+    console.error('[order/create]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
   }
-
-  const baseDiscount = subtotal >= 100 ? 5 : 0
-  const serviceFee = dineType === 'dine_in' ? qty * 3 : 0
-  const total = subtotal - baseDiscount - couponDiscount + serviceFee
-
-  const now = new Date()
-  const orderId = 'ORD' + now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0') + String(Math.floor(Math.random()*1000)).padStart(3,'0')
-  const order = {
-    id: orderId,
-    userId: parseInt(userId),
-    tableNo: tableNo || '',
-    dineType: dineType || 'dine_in',
-    peopleCount: qty,
-    items,
-    subtotal,
-    discount: baseDiscount,
-    couponDiscount,
-    couponId,
-    total,
-    note: note || '',
-    status: 'pending',
-    createdAt: now.toISOString()
-  }
-  db.push('orders', order)
-
-  // 使用优惠券
-  if (userCouponId && couponDiscount > 0) {
-    useCoupon(userCouponId, orderId)
-  }
-
-  // Clear cart
-  const carts = db.get('carts') || {}
-  carts[userId] = []
-  db.set('carts', carts)
-
-  // WebSocket 推送：新订单通知
-  notify(req, null, 'order:new', { orderId, userId: parseInt(userId), tableNo, total })
-
-  success(res, order)
 })
 
 router.get('/list', (req, res) => {
-  const { userId, page = 1, pageSize = 20 } = req.query
-  if (!userId) return error(req, res, '缺少 userId')
-  const p = Math.max(1, parseInt(page))
-  const ps = Math.min(50, Math.max(1, parseInt(pageSize)))
-  const all = db.filter('orders', o => o.userId == userId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-  const total = all.length
-  const orders = all.slice((p - 1) * ps, p * ps)
-  success(res, { orders, total, page: p, pageSize: ps })
+  try {
+    const { userId, page = 1, pageSize = 20 } = req.query
+    if (!userId) return error(req, res, '缺少 userId')
+    const p = Math.max(1, parseInt(page))
+    const ps = Math.min(50, Math.max(1, parseInt(pageSize)))
+    const all = db.filter('orders', o => o.userId == userId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    const total = all.length
+    const orders = all.slice((p - 1) * ps, p * ps)
+    success(res, { orders, total, page: p, pageSize: ps })
+  } catch (err) {
+    console.error('[order/list]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
+  }
 })
 
 router.get('/detail', (req, res) => {
-  const { id } = req.query
-  if (!id) return error(req, res, '缺少 id')
-  const order = db.find('orders', o => o.id == id)
-  if (!order) return error(req, res, '订单不存在', 404)
-  success(res, order)
+  try {
+    const { id } = req.query
+    if (!id) return error(req, res, '缺少 id')
+    const order = db.find('orders', o => o.id == id)
+    if (!order) return error(req, res, '订单不存在', 404)
+    success(res, order)
+  } catch (err) {
+    console.error('[order/detail]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
+  }
 })
 
 // 商家接单：pending → confirmed
 router.post('/accept', (req, res) => {
-  const { id } = req.body
-  if (!id) return error(req, res, '缺少 id')
-  const order = db.find('orders', o => o.id == id)
-  if (!order) return error(req, res, '订单不存在', 404)
-  if (order.status !== 'pending') return error(req, res, '当前状态不可接单')
-  db.update('orders', o => o.id == id, o => { o.status = 'confirmed' })
-  order.status = 'confirmed'
-  notify(req, order.userId, 'order:status', { orderId: id, status: 'confirmed' })
-  success(res, order)
+  try {
+    const { id } = req.body
+    if (!id) return error(req, res, '缺少 id')
+    const order = db.find('orders', o => o.id == id)
+    if (!order) return error(req, res, '订单不存在', 404)
+    if (order.status !== 'pending') return error(req, res, '当前状态不可接单')
+    db.update('orders', o => o.id == id, o => { o.status = 'confirmed' })
+    order.status = 'confirmed'
+    notify(req, order.userId, 'order:status', { orderId: id, status: 'confirmed' })
+    success(res, order)
+  } catch (err) {
+    console.error('[order/accept]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
+  }
 })
 
 // 商家出餐：confirmed → ready
 router.post('/ready', (req, res) => {
-  const { id } = req.body
-  if (!id) return error(req, res, '缺少 id')
-  const order = db.find('orders', o => o.id == id)
-  if (!order) return error(req, res, '订单不存在', 404)
-  if (order.status !== 'confirmed') return error(req, res, '当前状态不可出餐')
-  db.update('orders', o => o.id == id, o => { o.status = 'ready' })
-  order.status = 'ready'
-  notify(req, order.userId, 'order:status', { orderId: id, status: 'ready' })
-  success(res, order)
+  try {
+    const { id } = req.body
+    if (!id) return error(req, res, '缺少 id')
+    const order = db.find('orders', o => o.id == id)
+    if (!order) return error(req, res, '订单不存在', 404)
+    if (order.status !== 'confirmed') return error(req, res, '当前状态不可出餐')
+    db.update('orders', o => o.id == id, o => { o.status = 'ready' })
+    order.status = 'ready'
+    notify(req, order.userId, 'order:status', { orderId: id, status: 'ready' })
+    success(res, order)
+  } catch (err) {
+    console.error('[order/ready]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
+  }
 })
 
 router.post('/cancel', (req, res) => {
-  const { id } = req.body
-  if (!id) return error(req, res, '缺少 id')
-  const order = db.update('orders', o => o.id == id, o => { o.status = 'cancelled' })
-  if (!order) return error(req, res, '订单不存在', 404)
-  notify(req, order.userId, 'order:status', { orderId: id, status: 'cancelled' })
-  success(res, order)
+  try {
+    const { id } = req.body
+    if (!id) return error(req, res, '缺少 id')
+    const order = db.update('orders', o => o.id == id, o => { o.status = 'cancelled' })
+    if (!order) return error(req, res, '订单不存在', 404)
+    notify(req, order.userId, 'order:status', { orderId: id, status: 'cancelled' })
+    success(res, order)
+  } catch (err) {
+    console.error('[order/cancel]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
+  }
 })
 
 // 确认取餐：ready → completed
 router.post('/complete', (req, res) => {
-  const { id } = req.body
-  if (!id) return error(req, res, '缺少 id')
-  const order = db.find('orders', o => o.id == id)
-  if (!order) return error(req, res, '订单不存在', 404)
-  if (order.status !== 'ready') return error(req, res, '当前状态不可完成')
-  db.update('orders', o => o.id == id, o => { o.status = 'completed' })
-  order.status = 'completed'
-  notify(req, order.userId, 'order:status', { orderId: id, status: 'completed' })
-  success(res, order)
+  try {
+    const { id } = req.body
+    if (!id) return error(req, res, '缺少 id')
+    const order = db.find('orders', o => o.id == id)
+    if (!order) return error(req, res, '订单不存在', 404)
+    if (order.status !== 'ready') return error(req, res, '当前状态不可完成')
+    db.update('orders', o => o.id == id, o => { o.status = 'completed' })
+    order.status = 'completed'
+    notify(req, order.userId, 'order:status', { orderId: id, status: 'completed' })
+    success(res, order)
+  } catch (err) {
+    console.error('[order/complete]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
+  }
 })
 
 module.exports = router
