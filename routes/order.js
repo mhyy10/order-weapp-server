@@ -3,6 +3,7 @@ const router = express.Router()
 const db = require('../db')
 const { success, error } = require('../utils/response')
 const { useCoupon } = require('./coupon')
+const { spendPoints, earnPoints } = require('./points')
 
 // 统一推送：同时走 Socket.IO（管理后台）和原生 WebSocket（小程序）
 function notify(req, userId, event, data) {
@@ -49,7 +50,7 @@ function calculateOrderTotal(items) {
 
 router.post('/create', (req, res) => {
   try {
-    const { userId, tableNo, dineType, peopleCount, items, note, userCouponId } = req.body
+    const { userId, tableNo, dineType, peopleCount, items, note, userCouponId, usePoints, addressId } = req.body
     if (!userId) return error(req, res, '缺少必填参数: userId')
     if (!items || !Array.isArray(items) || items.length === 0) return error(req, res, '缺少必填参数: items(数组且非空)')
     if (!tableNo) return error(req, res, '缺少必填参数: tableNo')
@@ -82,7 +83,46 @@ router.post('/create', (req, res) => {
 
     const baseDiscount = subtotal >= 100 ? 5 : 0
     const serviceFee = dineType === 'dine_in' ? qty * 3 : 0
-    const total = subtotal - baseDiscount - couponDiscount + serviceFee
+
+    // 积分抵扣计算（100积分=1元，最多抵扣订单金额的30%）
+    let pointsDiscount = 0
+    let pointsUsed = 0
+    const amountForPointsCalc = subtotal - baseDiscount - couponDiscount + serviceFee
+    const maxPointsDiscount = Math.floor(amountForPointsCalc * 0.3) // 最多抵扣30%
+    if (usePoints && usePoints > 0) {
+      const userPoints = db.find('points', p => p.userId == userId)
+      if (userPoints && userPoints.balance > 0) {
+        pointsUsed = Math.min(usePoints, userPoints.balance)
+        const pointsToYuan = Math.floor(pointsUsed / 100) // 100积分=1元
+        pointsDiscount = Math.min(pointsToYuan, maxPointsDiscount)
+        // 重新计算实际使用积分（可能不全部用完）
+        pointsUsed = Math.min(pointsUsed, pointsDiscount * 100 + (pointsUsed % 100))
+        // 精确计算：按实际抵扣金额反推需要的积分
+        pointsUsed = pointsDiscount * 100
+        if (pointsUsed > userPoints.balance) {
+          pointsUsed = Math.floor(userPoints.balance / 100) * 100
+          pointsDiscount = pointsUsed / 100
+        }
+      }
+    }
+
+    const total = amountForPointsCalc - pointsDiscount
+
+    // 地址校验
+    let addressInfo = null
+    if (addressId) {
+      const addr = db.find('addresses', a => a.id == addressId && a.userId == userId)
+      if (!addr) return error(req, res, '地址不存在或不属于该用户')
+      addressInfo = {
+        addressId: addr.id,
+        name: addr.name,
+        phone: addr.phone,
+        province: addr.province,
+        city: addr.city,
+        district: addr.district,
+        detail: addr.detail
+      }
+    }
 
     const now = new Date()
     const orderId = 'ORD' + now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0') + String(Math.floor(Math.random()*1000)).padStart(3,'0')
@@ -97,8 +137,11 @@ router.post('/create', (req, res) => {
       discount: baseDiscount,
       couponDiscount,
       couponId,
+      pointsDiscount,
+      pointsUsed,
       total,
       note: note || '',
+      address: addressInfo,
       status: 'pending',
       createdAt: now.toISOString()
     }
@@ -107,6 +150,11 @@ router.post('/create', (req, res) => {
     // 使用优惠券
     if (userCouponId && couponDiscount > 0) {
       useCoupon(userCouponId, orderId)
+    }
+
+    // 扣减积分
+    if (pointsUsed > 0) {
+      spendPoints(userId, pointsUsed, orderId, '订单积分抵扣')
     }
 
     // Clear cart
@@ -126,14 +174,19 @@ router.post('/create', (req, res) => {
 
 router.get('/list', (req, res) => {
   try {
-    const { userId, page = 1, pageSize = 20 } = req.query
+    const { userId, status } = req.query
+    const page = parseInt(req.query.page) || 1
+    const pageSize = parseInt(req.query.pageSize) || 20
     if (!userId) return error(req, res, '缺少 userId')
-    const p = Math.max(1, parseInt(page))
-    const ps = Math.min(50, Math.max(1, parseInt(pageSize)))
-    const all = db.filter('orders', o => o.userId == userId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    let all = db.filter('orders', o => o.userId == userId)
+    if (status) {
+      all = all.filter(o => o.status === status)
+    }
+    all.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     const total = all.length
-    const orders = all.slice((p - 1) * ps, p * ps)
-    success(res, { orders, total, page: p, pageSize: ps })
+    const start = (page - 1) * pageSize
+    const list = all.slice(start, start + pageSize)
+    success(res, { list, total, page, pageSize })
   } catch (err) {
     console.error('[order/list]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })
@@ -213,6 +266,12 @@ router.post('/complete', (req, res) => {
     if (order.status !== 'ready') return error(req, res, '当前状态不可完成')
     db.update('orders', o => o.id == id, o => { o.status = 'completed' })
     order.status = 'completed'
+
+    // 订单完成后自动获取积分（消费金额 x 1，1元=1积分）
+    if (order.total > 0) {
+      earnPoints(order.userId, Math.floor(order.total), 'order', id, '下单奖励')
+    }
+
     notify(req, order.userId, 'order:status', { orderId: id, status: 'completed' })
     success(res, order)
   } catch (err) {

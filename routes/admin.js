@@ -26,13 +26,16 @@ router.get('/stats', (req, res) => {
     const todayRevenue = todayOrders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + (o.total || 0), 0)
     const waitingQueues = db.filter('queues', q => q.status === 'waiting').length
     const totalDishes = (db.get('dishes') || []).length
+    const totalUsers = (db.get('users') || []).length
     success(res, {
       todayOrders: todayOrders.length,
       todayRevenue,
-      waitingQueues,
+      pendingOrders: orders.filter(o => o.status === 'pending').length,
+      queueCount: waitingQueues,
       totalDishes,
+      totalUsers,
       totalOrders: orders.length,
-      pendingOrders: orders.filter(o => o.status === 'pending').length
+      waitingQueues
     })
   } catch (err) {
     console.error('[admin/stats]', err)
@@ -43,10 +46,23 @@ router.get('/stats', (req, res) => {
 // 菜品管理
 router.get('/dishes', (req, res) => {
   try {
+    const { categoryId, keyword } = req.query
+    const page = parseInt(req.query.page) || 1
+    const pageSize = parseInt(req.query.pageSize) || 20
     const dishes = db.get('dishes') || []
     const categories = db.get('categories') || []
-    const result = dishes.map(d => ({ ...d, categoryName: (categories.find(c => c.id === d.categoryId) || {}).name || '' }))
-    success(res, result)
+    let result = dishes.map(d => ({ ...d, categoryName: (categories.find(c => c.id === d.categoryId) || {}).name || '' }))
+    if (categoryId) {
+      result = result.filter(d => d.categoryId == categoryId)
+    }
+    if (keyword) {
+      const kw = keyword.toLowerCase()
+      result = result.filter(d => d.name.toLowerCase().includes(kw))
+    }
+    const total = result.length
+    const start = (page - 1) * pageSize
+    const list = result.slice(start, start + pageSize)
+    success(res, { list, total, page, pageSize })
   } catch (err) {
     console.error('[admin/dishes GET]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })
@@ -137,14 +153,16 @@ router.put('/categories', (req, res) => {
 // 订单管理
 router.get('/orders', (req, res) => {
   try {
-    const { status, page = 1, pageSize = 20 } = req.query
+    const { status } = req.query
+    const page = parseInt(req.query.page) || 1
+    const pageSize = parseInt(req.query.pageSize) || 20
     let orders = db.get('orders') || []
     if (status) orders = orders.filter(o => o.status === status)
     orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    const p = Math.max(1, parseInt(page))
-    const ps = Math.min(50, Math.max(1, parseInt(pageSize)))
     const total = orders.length
-    success(res, { orders: orders.slice((p - 1) * ps, p * ps), total, page: p, pageSize: ps })
+    const start = (page - 1) * pageSize
+    const list = orders.slice(start, start + pageSize)
+    success(res, { list, total, page, pageSize })
   } catch (err) {
     console.error('[admin/orders GET]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })
@@ -190,13 +208,22 @@ router.put('/orders', (req, res) => {
 // 评价列表
 router.get('/reviews', (req, res) => {
   try {
-    const reviews = db.get('reviews') || []
+    const { minRating } = req.query
+    const page = parseInt(req.query.page) || 1
+    const pageSize = parseInt(req.query.pageSize) || 20
+    let reviews = db.get('reviews') || []
+    if (minRating) {
+      reviews = reviews.filter(r => r.rating >= parseInt(minRating))
+    }
     const users = db.get('users') || []
     const result = reviews.map(r => {
       const user = users.find(u => u.id === r.userId)
       return { ...r, nickname: user ? user.nickname : '匿名' }
     }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    success(res, result)
+    const total = result.length
+    const start = (page - 1) * pageSize
+    const list = result.slice(start, start + pageSize)
+    success(res, { list, total, page, pageSize })
   } catch (err) {
     console.error('[admin/reviews GET]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })
@@ -206,7 +233,20 @@ router.get('/reviews', (req, res) => {
 // 优惠券管理
 router.get('/coupons', (req, res) => {
   try {
-    success(res, db.get('coupons') || [])
+    const { status } = req.query
+    const page = parseInt(req.query.page) || 1
+    const pageSize = parseInt(req.query.pageSize) || 20
+    const now = new Date().toISOString()
+    let coupons = db.get('coupons') || []
+    if (status === 'active') {
+      coupons = coupons.filter(c => c.isActive && c.endDate >= now)
+    } else if (status === 'expired') {
+      coupons = coupons.filter(c => c.endDate < now || !c.isActive)
+    }
+    const total = coupons.length
+    const start = (page - 1) * pageSize
+    const list = coupons.slice(start, start + pageSize)
+    success(res, { list, total, page, pageSize })
   } catch (err) {
     console.error('[admin/coupons GET]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })

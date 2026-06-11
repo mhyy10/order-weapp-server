@@ -19,8 +19,13 @@
   <div class="main">
     <h1>优惠券管理</h1>
     <div class="table-wrap">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <span id="count"></span>
+      <div class="filter-bar">
+        <select id="statusFilter" onchange="goPage(1)">
+          <option value="">全部</option>
+          <option value="active">进行中</option>
+          <option value="expired">已过期</option>
+        </select>
+        <span id="count" style="margin-left:auto;"></span>
         <button class="btn btn-primary" onclick="showAdd()">+ 创建优惠券</button>
       </div>
       <div id="coupon-list"></div>
@@ -31,11 +36,18 @@
 <script>
 if (!adminToken) location.href = 'index.html';
 
-async function loadCoupons() {
-  const coupons = await api('GET', '/admin/coupons');
-  document.getElementById('count').textContent = `共 ${coupons.length} 张`;
+let currentPage = 1;
+const pageSize = 20;
+
+async function goPage(page) {
+  currentPage = page || 1;
+  const status = document.getElementById('statusFilter').value;
+  let url = `/admin/coupons?page=${currentPage}&pageSize=${pageSize}`;
+  if (status) url += `&status=${status}`;
+  const data = await api('GET', url);
+  document.getElementById('count').textContent = `共 ${data.total} 张`;
   renderTable('coupon-list', ['ID','名称','类型','面值','门槛','有效期','已领/总量','状态','操作'],
-    coupons, c => {
+    data.list, c => {
       const typeLabel = c.type==='reduction'?'满减':'折扣';
       const valueLabel = c.type==='reduction'?fmtPrice(c.value):(c.value*10)+'折';
       return `<td>${c.id}</td><td>${c.name}</td><td>${typeLabel}</td><td>${valueLabel}</td>
@@ -44,6 +56,7 @@ async function loadCoupons() {
         <td><span class="badge ${c.isActive?'badge-available':'badge-used'}">${c.isActive?'启用':'停用'}</span></td>
         <td><button class="btn btn-sm btn-outline" onclick="toggleCoupon(${c.id},${!c.isActive})">${c.isActive?'停用':'启用'}</button></td>`;
     });
+  renderPagination('coupon-list', data.total, currentPage, pageSize, 'goPage');
 }
 
 async function showAdd() {
@@ -54,13 +67,13 @@ async function showAdd() {
   const total = parseInt(prompt('发放总量:', '100'));
   const endDate = prompt('截止日期 (YYYY-MM-DD):', '2026-12-31');
   await api('POST', '/admin/coupons', { name, type, value, threshold, startDate: '2026-01-01', endDate, total });
-  loadCoupons();
+  goPage(1);
 }
 
-async function toggleCoupon(id, val) { await api('PUT', '/admin/coupons', { id, isActive: val }); loadCoupons(); }
+async function toggleCoupon(id, val) { await api('PUT', '/admin/coupons', { id, isActive: val }); goPage(currentPage); }
 function logout() { localStorage.removeItem('adminToken'); location.href = 'index.html'; }
 
-loadCoupons();
+goPage(1);
 </script>
 </body>
 </html>

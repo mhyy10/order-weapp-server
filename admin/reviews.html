@@ -18,6 +18,17 @@
   </nav>
   <div class="main">
     <h1>评价管理</h1>
+    <div class="filter-bar">
+      <select id="ratingFilter" onchange="goPage(1)">
+        <option value="">全部评分</option>
+        <option value="5">5星</option>
+        <option value="4">4星及以上</option>
+        <option value="3">3星及以上</option>
+        <option value="2">2星及以上</option>
+        <option value="1">1星</option>
+      </select>
+      <span id="count" style="margin-left:auto;"></span>
+    </div>
     <div class="table-wrap"><div id="review-list"></div></div>
   </div>
 </div>
@@ -25,25 +36,32 @@
 <script>
 if (!adminToken) location.href = 'index.html';
 
-async function loadReviews() {
-  const reviews = await api('GET', '/admin/reviews');
-  if (!reviews.length) { document.getElementById('review-list').innerHTML = '<div class="empty"><p>暂无评价</p></div>'; return; }
-  const avgRating = (reviews.reduce((s,r)=>s+r.rating,0)/reviews.length).toFixed(1);
-  document.getElementById('review-list').innerHTML = `
-    <div style="margin-bottom:16px;font-size:16px;">平均评分: <b style="color:#FFB800;font-size:24px;">${avgRating}</b> / 5 共 ${reviews.length} 条评价</div>
-    <table><thead><tr><th>用户</th><th>评分</th><th>标签</th><th>内容</th><th>时间</th></tr></thead><tbody>
-    ${reviews.map(r => `<tr>
-      <td>${r.nickname}</td>
+let currentPage = 1;
+const pageSize = 20;
+
+async function goPage(page) {
+  currentPage = page || 1;
+  const minRating = document.getElementById('ratingFilter').value;
+  let url = `/admin/reviews?page=${currentPage}&pageSize=${pageSize}`;
+  if (minRating) url += `&minRating=${minRating}`;
+  const data = await api('GET', url);
+  document.getElementById('count').textContent = `共 ${data.total} 条评价`;
+  if (!data.list || data.list.length === 0) {
+    document.getElementById('review-list').innerHTML = '<div class="empty"><p>暂无评价</p></div>';
+    return;
+  }
+  renderTable('review-list', ['用户','评分','标签','内容','时间'],
+    data.list, r => `<td>${r.nickname}</td>
       <td style="color:#FFB800;font-weight:700;">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</td>
       <td>${(r.tags||[]).map(t=>`<span class="badge badge-pending">${t}</span>`).join(' ')}</td>
       <td>${r.content||'-'}</td>
-      <td>${fmtDate(r.createdAt)}</td>
-    </tr>`).join('')}</tbody></table>`;
+      <td>${fmtDate(r.createdAt)}</td>`);
+  renderPagination('review-list', data.total, currentPage, pageSize, 'goPage');
 }
 
 function logout() { localStorage.removeItem('adminToken'); location.href = 'index.html'; }
 
-loadReviews();
+goPage(1);
 </script>
 </body>
 </html>

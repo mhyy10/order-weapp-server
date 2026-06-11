@@ -43,7 +43,9 @@ router.post('/create', (req, res) => {
 // 评价列表
 router.get('/list', (req, res) => {
   try {
-    const { dishId, minRating, page = 1, pageSize = 20 } = req.query
+    const { dishId, minRating } = req.query
+    const page = parseInt(req.query.page) || 1
+    const pageSize = parseInt(req.query.pageSize) || 20
     let reviews = db.filter('reviews', r => true)
 
     // 按菜品筛选（通过订单中的菜品匹配）
@@ -63,15 +65,13 @@ router.get('/list', (req, res) => {
     // 按时间倒序
     reviews.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
-    // 分页
-    const p = Math.max(1, parseInt(page))
-    const ps = Math.min(50, Math.max(1, parseInt(pageSize)))
     const total = reviews.length
-    const list = reviews.slice((p - 1) * ps, p * ps)
+    const start = (page - 1) * pageSize
+    const pagedList = reviews.slice(start, start + pageSize)
 
     // 附加用户信息
     const users = db.get('users') || []
-    const result = list.map(r => {
+    const list = pagedList.map(r => {
       const user = users.find(u => u.id === r.userId)
       return {
         ...r,
@@ -80,7 +80,7 @@ router.get('/list', (req, res) => {
       }
     })
 
-    success(res, { reviews: result, total, page: p, pageSize: ps })
+    success(res, { list, total, page, pageSize })
   } catch (err) {
     console.error('[review/list]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })

@@ -55,3 +55,18 @@ tr:hover { background: #fafafa; }
 /* 空状态 */
 .empty { text-align: center; padding: 60px 0; color: #999; }
 .empty p { margin-top: 12px; }
+
+/* 分页导航 */
+.pagination { display: flex; align-items: center; gap: 6px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
+.pagination .page-info { font-size: 13px; color: #999; margin-right: auto; }
+.pagination .page-ellipsis { color: #999; padding: 0 4px; font-size: 13px; }
+.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 筛选栏 */
+.filter-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-bar input, .filter-bar select { padding: 8px 12px; border: 1px solid #e5e5e5; border-radius: 6px; font-size: 13px; outline: none; }
+.filter-bar input:focus, .filter-bar select:focus { border-color: #FF6B35; }
+.filter-bar input { width: 200px; }
+
+/* 统计卡片图标 */
+.stat-card .icon { font-size: 28px; margin-bottom: 8px; }

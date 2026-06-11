@@ -6,11 +6,16 @@ const { success, error } = require('../utils/response')
 // 可领取的优惠券列表
 router.get('/list', (req, res) => {
   try {
+    const page = parseInt(req.query.page) || 1
+    const pageSize = parseInt(req.query.pageSize) || 20
     const now = new Date().toISOString()
-    const coupons = db.filter('coupons', c =>
+    const filtered = db.filter('coupons', c =>
       c.isActive && c.endDate >= now && c.claimed < c.total
     )
-    success(res, coupons)
+    const total = filtered.length
+    const start = (page - 1) * pageSize
+    const list = filtered.slice(start, start + pageSize)
+    success(res, { list, total, page, pageSize })
   } catch (err) {
     console.error('[coupon/list]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })

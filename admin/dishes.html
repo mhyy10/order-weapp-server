@@ -19,8 +19,13 @@
   <div class="main">
     <h1>菜品管理</h1>
     <div class="table-wrap">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <span id="count"></span>
+      <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="搜索菜品名称..." onkeydown="if(event.key==='Enter')goPage(1)">
+        <select id="categoryFilter" onchange="goPage(1)">
+          <option value="">全部分类</option>
+        </select>
+        <button class="btn btn-outline" onclick="goPage(1)">搜索</button>
+        <span id="count" style="margin-left:auto;"></span>
         <button class="btn btn-primary" onclick="showAdd()">+ 添加菜品</button>
       </div>
       <div id="dish-list"></div>
@@ -31,15 +36,36 @@
 <script>
 if (!adminToken) location.href = 'index.html';
 
-async function loadDishes() {
-  const dishes = await api('GET', '/admin/dishes');
-  document.getElementById('count').textContent = `共 ${dishes.length} 道菜`;
+let currentPage = 1;
+const pageSize = 20;
+
+async function loadCategories() {
+  const cats = await api('GET', '/admin/categories');
+  const sel = document.getElementById('categoryFilter');
+  cats.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    sel.appendChild(opt);
+  });
+}
+
+async function goPage(page) {
+  currentPage = page || 1;
+  const keyword = document.getElementById('searchInput').value.trim();
+  const categoryId = document.getElementById('categoryFilter').value;
+  let url = `/admin/dishes?page=${currentPage}&pageSize=${pageSize}`;
+  if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
+  if (categoryId) url += `&categoryId=${categoryId}`;
+  const data = await api('GET', url);
+  document.getElementById('count').textContent = `共 ${data.total} 道菜`;
   renderTable('dish-list', ['ID','名称','分类','价格','月销','上架','操作'],
-    dishes, d => `<td>${d.id}</td><td>${d.name}</td><td>${d.categoryName}</td>
+    data.list, d => `<td>${d.id}</td><td>${d.name}</td><td>${d.categoryName}</td>
       <td>${fmtPrice(d.price)}</td><td>${d.sales}</td>
       <td><span class="badge ${d.isAvailable?'badge-available':'badge-used'}">${d.isAvailable?'上架':'下架'}</span></td>
       <td><button class="btn btn-sm btn-outline" onclick="toggleAvail(${d.id},${!d.isAvailable})">${d.isAvailable?'下架':'上架'}</button>
       <button class="btn btn-sm btn-danger" onclick="delDish(${d.id})">删除</button></td>`);
+  renderPagination('dish-list', data.total, currentPage, pageSize, 'goPage');
 }
 
 async function showAdd() {
@@ -48,14 +74,15 @@ async function showAdd() {
   const price = parseFloat(prompt('价格:')) || 0;
   const categoryId = parseInt(prompt('分类ID (1推荐 2热菜 3凉菜 4主食 5汤羹 6小食 7饮品 8甜品):')) || 1;
   await api('POST', '/admin/dishes', { name, price, categoryId, description: '', specs: [], addons: [], tags: [], isRecommended: false, originalPrice: 0 });
-  loadDishes();
+  goPage(1);
 }
 
-async function toggleAvail(id, val) { await api('PUT', '/admin/dishes', { id, isAvailable: val }); loadDishes(); }
-async function delDish(id) { if(confirm('确定删除?')){await api('DELETE', '/admin/dishes', { id }); loadDishes();} }
+async function toggleAvail(id, val) { await api('PUT', '/admin/dishes', { id, isAvailable: val }); goPage(currentPage); }
+async function delDish(id) { if(confirm('确定删除?')){await api('DELETE', '/admin/dishes', { id }); goPage(currentPage);} }
 function logout() { localStorage.removeItem('adminToken'); location.href = 'index.html'; }
 
-loadDishes();
+loadCategories();
+goPage(1);
 </script>
 </body>
 </html>

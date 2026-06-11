@@ -17,7 +17,43 @@ const DEFAULT_DB = {
   ],
   userCoupons: [],
   reviews: [],
-  admins: [{ id: 1, username: 'admin', password: 'admin123', name: '店长' }]
+  admins: [{ id: 1, username: 'admin', password: 'admin123', name: '店长' }],
+  addresses: [
+    {
+      id: 'addr_1',
+      userId: 1,
+      name: '张三',
+      phone: '13800138000',
+      province: '北京市',
+      city: '北京市',
+      district: '朝阳区',
+      detail: '望京SOHO T3 12层',
+      isDefault: true,
+      createdAt: '2026-06-11T10:00:00Z'
+    }
+  ],
+  points: [
+    {
+      id: 'pt_1',
+      userId: 1,
+      balance: 500,
+      totalEarned: 1200,
+      totalSpent: 700,
+      updatedAt: '2026-06-11T10:00:00Z'
+    }
+  ],
+  pointRecords: [
+    {
+      id: 'pr_1',
+      userId: 1,
+      type: 'earn',
+      amount: 100,
+      source: 'order',
+      refId: 'order_1',
+      desc: '下单奖励',
+      createdAt: '2026-06-11T10:00:00Z'
+    }
+  ]
 }
 
 class Database {

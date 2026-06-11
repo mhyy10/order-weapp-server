@@ -66,4 +66,25 @@ router.post('/cancel', (req, res) => {
   }
 })
 
+// 排队列表（管理后台用）
+router.get('/list', (req, res) => {
+  try {
+    const { status } = req.query
+    const page = parseInt(req.query.page) || 1
+    const pageSize = parseInt(req.query.pageSize) || 20
+    let queues = db.filter('queues', q => true)
+    if (status) {
+      queues = queues.filter(q => q.status === status)
+    }
+    queues.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    const total = queues.length
+    const start = (page - 1) * pageSize
+    const list = queues.slice(start, start + pageSize)
+    success(res, { list, total, page, pageSize })
+  } catch (err) {
+    console.error('[queue/list]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
+  }
+})
+
 module.exports = router

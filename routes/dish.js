@@ -6,9 +6,17 @@ const { success, error } = require('../utils/response')
 router.get('/list', (req, res) => {
   try {
     const { categoryId } = req.query
-    if (!categoryId) return error(req, res, '缺少 categoryId')
-    const dishes = db.filter('dishes', d => d.categoryId == categoryId && d.isAvailable)
-    success(res, dishes)
+    const page = parseInt(req.query.page) || 1
+    const pageSize = parseInt(req.query.pageSize) || 20
+    let dishes = db.filter('dishes', d => d.isAvailable)
+    if (categoryId) {
+      dishes = dishes.filter(d => d.categoryId == categoryId)
+    }
+    dishes.sort((a, b) => (b.sales || 0) - (a.sales || 0))
+    const total = dishes.length
+    const start = (page - 1) * pageSize
+    const list = dishes.slice(start, start + pageSize)
+    success(res, { list, total, page, pageSize })
   } catch (err) {
     console.error('[dish/list]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })
