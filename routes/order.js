@@ -151,7 +151,8 @@ router.post('/create', (req, res) => {
       note: note || '',
       address: addressInfo,
       status: 'pending',
-      createdAt: now.toISOString()
+      createdAt: now.toISOString(),
+      expireAt: new Date(now.getTime() + 30 * 60 * 1000).toISOString() // 30分钟后超时
     }
     db.push('orders', order)
 
