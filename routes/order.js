@@ -88,7 +88,40 @@ router.post('/create', (req, res) => {
 
     const baseDiscount = subtotal >= 100 ? 5 : 0
     const serviceFee = type === 'dine_in' ? qty * 3 : 0
-    const orderDeliveryFee = type === 'delivery' ? (parseFloat(deliveryFee) || 0) : 0
+
+    // 配送费后端重新计算，防止前端篡改
+    let orderDeliveryFee = 0
+    let orderEstimatedTime = 0
+    if (type === 'delivery') {
+      const DELIVERY_CONFIG = {
+        BASE_FEE: 5,
+        FREE_THRESHOLD: 30,
+        BASE_DISTANCE: 3,
+        EXTRA_FEE_PER_KM: 1,
+        ESTIMATED_TIME_BASE: 25,
+        ESTIMATED_TIME_PER_KM: 5
+      }
+      // 满30免配送费
+      if (subtotal >= DELIVERY_CONFIG.FREE_THRESHOLD) {
+        orderDeliveryFee = 0
+      } else if (addressId) {
+        // 根据地址计算距离和配送费（与 delivery.js 逻辑一致）
+        const addr = db.find('addresses', a => a.id == addressId)
+        let distance = 2.5
+        if (addr) {
+          const hash = String(addr.id).split('').reduce((s, c) => s + c.charCodeAt(0), 0)
+          distance = 1 + (hash % 70) / 10
+        }
+        orderDeliveryFee = DELIVERY_CONFIG.BASE_FEE
+        if (distance > DELIVERY_CONFIG.BASE_DISTANCE) {
+          orderDeliveryFee += Math.ceil(distance - DELIVERY_CONFIG.BASE_DISTANCE) * DELIVERY_CONFIG.EXTRA_FEE_PER_KM
+        }
+        orderEstimatedTime = DELIVERY_CONFIG.ESTIMATED_TIME_BASE + Math.ceil(distance) * DELIVERY_CONFIG.ESTIMATED_TIME_PER_KM
+      } else {
+        orderDeliveryFee = parseFloat(deliveryFee) || DELIVERY_CONFIG.BASE_FEE
+        orderEstimatedTime = parseInt(estimatedTime) || 30
+      }
+    }
 
     // 积分抵扣计算（100积分=1元，最多抵扣订单金额的30%）
     let pointsDiscount = 0
@@ -146,7 +179,7 @@ router.post('/create', (req, res) => {
       pointsDiscount,
       pointsUsed,
       deliveryFee: orderDeliveryFee,
-      estimatedTime: type === 'delivery' ? (parseInt(estimatedTime) || 30) : 0,
+      estimatedTime: type === 'delivery' ? (orderEstimatedTime || 30) : 0,
       total,
       note: note || '',
       address: addressInfo,
