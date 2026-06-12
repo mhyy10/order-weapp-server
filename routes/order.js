@@ -222,7 +222,7 @@ router.post('/accept', (req, res) => {
     const order = db.find('orders', o => o.id == id)
     if (!order) return error(req, res, '订单不存在', 404)
     if (order.status !== 'pending') return error(req, res, '当前状态不可接单')
-    db.update('orders', o => o.id == id, o => { o.status = 'confirmed' })
+    db.update('orders', o => o.id == id, o => { o.status = 'confirmed'; o.confirmedAt = new Date().toISOString() })
     order.status = 'confirmed'
     notify(req, order.userId, 'order:status', { orderId: id, status: 'confirmed' })
     success(res, order)
@@ -240,7 +240,7 @@ router.post('/ready', (req, res) => {
     const order = db.find('orders', o => o.id == id)
     if (!order) return error(req, res, '订单不存在', 404)
     if (order.status !== 'confirmed') return error(req, res, '当前状态不可出餐')
-    db.update('orders', o => o.id == id, o => { o.status = 'ready' })
+    db.update('orders', o => o.id == id, o => { o.status = 'ready'; o.readyAt = new Date().toISOString() })
     order.status = 'ready'
     notify(req, order.userId, 'order:status', { orderId: id, status: 'ready' })
     success(res, order)
@@ -252,11 +252,47 @@ router.post('/ready', (req, res) => {
 
 router.post('/cancel', (req, res) => {
   try {
-    const { id } = req.body
+    const { id, reason } = req.body
     if (!id) return error(req, res, '缺少 id')
-    const order = db.update('orders', o => o.id == id, o => { o.status = 'cancelled' })
+    const order = db.find('orders', o => o.id == id)
     if (!order) return error(req, res, '订单不存在', 404)
-    notify(req, order.userId, 'order:status', { orderId: id, status: 'cancelled' })
+
+    // 合法取消状态校验：只有 pending/confirmed 可取消
+    const cancellableStatuses = ['pending', 'confirmed']
+    if (!cancellableStatuses.includes(order.status)) {
+      return error(req, res, '当前订单状态不可取消（已出餐/配送中/已完成订单无法取消）')
+    }
+
+    // 更新状态并记录取消时间和原因
+    db.update('orders', o => o.id == id, o => {
+      o.status = 'cancelled'
+      o.cancelledAt = new Date().toISOString()
+      o.cancelReason = reason || '用户取消'
+    })
+    order.status = 'cancelled'
+    order.cancelledAt = new Date().toISOString()
+    order.cancelReason = reason || '用户取消'
+
+    // 退还优惠券
+    if (order.couponId && order.couponDiscount > 0) {
+      const userCoupon = db.find('userCoupons', uc =>
+        uc.usedOrderId === id && uc.status === 'used'
+      )
+      if (userCoupon) {
+        db.update('userCoupons', uc => uc.id === userCoupon.id, uc => {
+          uc.status = 'available'
+          uc.usedOrderId = null
+          uc.usedAt = null
+        })
+      }
+    }
+
+    // 退还积分
+    if (order.pointsUsed > 0) {
+      earnPoints(order.userId, order.pointsUsed, 'order_cancel', id, '订单取消退还积分')
+    }
+
+    notify(req, order.userId, 'order:status', { orderId: id, status: 'cancelled', reason: order.cancelReason })
     success(res, order)
   } catch (err) {
     console.error('[order/cancel]', err)
@@ -277,7 +313,7 @@ router.post('/complete', (req, res) => {
     } else {
       if (order.status !== 'ready') return error(req, res, '当前状态不可完成')
     }
-    db.update('orders', o => o.id == id, o => { o.status = 'completed' })
+    db.update('orders', o => o.id == id, o => { o.status = 'completed'; o.completedAt = new Date().toISOString() })
     order.status = 'completed'
 
     // 订单完成后自动获取积分（消费金额 x 1，1元=1积分）
@@ -315,6 +351,7 @@ router.post('/delivering', (req, res) => {
 
     db.update('orders', o => o.id == id, o => {
       o.status = 'delivering'
+      o.deliveringAt = new Date().toISOString()
       o.delivery = o.delivery || {}
       o.delivery.riderName = rider.name
       o.delivery.riderPhone = rider.phone
@@ -345,6 +382,7 @@ router.post('/delivered', (req, res) => {
 
     db.update('orders', o => o.id == id, o => {
       o.status = 'completed'
+      o.completedAt = new Date().toISOString()
       if (o.delivery) o.delivery.deliveredTime = new Date().toISOString()
     })
     order.status = 'completed'

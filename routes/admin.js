@@ -172,7 +172,7 @@ router.get('/orders', (req, res) => {
 
 router.put('/orders', (req, res) => {
   try {
-    const { id, status } = req.body
+    const { id, status, cancelReason } = req.body
     if (!id) return error(req, res, '缺少必填参数: orderId')
     if (!status) return error(req, res, '缺少必填参数: status')
 
@@ -191,7 +191,48 @@ router.put('/orders', (req, res) => {
       return error(req, res, `不允许从 ${order.status} 变更为 ${status}`)
     }
 
-    db.update('orders', o => o.id == id, o => { o.status = status })
+    // 构建更新数据（含状态时间戳）
+    const now = new Date().toISOString()
+    const timestampMap = {
+      confirmed: 'confirmedAt',
+      ready: 'readyAt',
+      delivering: 'deliveringAt',
+      completed: 'completedAt',
+      cancelled: 'cancelledAt'
+    }
+    const updateData = { status }
+    if (timestampMap[status]) updateData[timestampMap[status]] = now
+    if (status === 'cancelled') updateData.cancelReason = cancelReason || '商家取消'
+
+    db.update('orders', o => o.id == id, o => Object.assign(o, updateData))
+
+    // 取消订单时退还优惠券和积分
+    if (status === 'cancelled') {
+      // 退还优惠券
+      if (order.couponId && order.couponDiscount > 0) {
+        const userCoupon = db.find('userCoupons', uc =>
+          uc.usedOrderId === id && uc.status === 'used'
+        )
+        if (userCoupon) {
+          db.update('userCoupons', uc => uc.id === userCoupon.id, uc => {
+            uc.status = 'available'
+            uc.usedOrderId = null
+            uc.usedAt = null
+          })
+        }
+      }
+      // 退还积分
+      if (order.pointsUsed > 0) {
+        const { earnPoints } = require('./points')
+        earnPoints(order.userId, order.pointsUsed, 'order_cancel', id, '订单取消退还积分')
+      }
+    }
+
+    // 完成订单时发放积分
+    if (status === 'completed' && order.total > 0) {
+      const { earnPoints } = require('./points')
+      earnPoints(order.userId, Math.floor(order.total), 'order', id, '下单奖励')
+    }
 
     // 双通道推送：Socket.IO（管理后台）+ 原生 WebSocket（小程序）
     if (req.io) {
@@ -200,7 +241,7 @@ router.put('/orders', (req, res) => {
     if (req.wsBroadcast) {
       req.wsBroadcast(order.userId, 'order:status', { orderId: id, status })
     }
-    success(res, { ...order, status })
+    success(res, { ...order, ...updateData })
   } catch (err) {
     console.error('[admin/orders PUT]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })
