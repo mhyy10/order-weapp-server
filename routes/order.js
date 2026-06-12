@@ -193,7 +193,12 @@ router.get('/list', (req, res) => {
     all.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     const total = all.length
     const start = (page - 1) * pageSize
-    const list = all.slice(start, start + pageSize)
+    const list = all.slice(start, start + pageSize).map(o => {
+      // 列表页截断 items，只保留前3个用于预览
+      const previewItems = o.items ? o.items.slice(0, 3) : []
+      const itemCount = o.items ? o.items.reduce((s, i) => s + (i.quantity || 1), 0) : 0
+      return { ...o, items: previewItems, _itemCount: itemCount, _hasMore: o.items && o.items.length > 3 }
+    })
     success(res, { list, total, page, pageSize })
   } catch (err) {
     console.error('[order/list]', err)
