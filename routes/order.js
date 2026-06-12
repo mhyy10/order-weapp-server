@@ -50,10 +50,15 @@ function calculateOrderTotal(items) {
 
 router.post('/create', (req, res) => {
   try {
-    const { userId, tableNo, dineType, peopleCount, items, note, userCouponId, usePoints, addressId } = req.body
+    const { userId, tableNo, dineType, peopleCount, items, note, userCouponId, usePoints, addressId, deliveryFee, estimatedTime } = req.body
     if (!userId) return error(req, res, '缺少必填参数: userId')
     if (!items || !Array.isArray(items) || items.length === 0) return error(req, res, '缺少必填参数: items(数组且非空)')
-    if (!tableNo) return error(req, res, '缺少必填参数: tableNo')
+
+    // 用餐方式校验
+    const validDineTypes = ['dine_in', 'takeaway', 'delivery']
+    const type = validDineTypes.includes(dineType) ? dineType : 'dine_in'
+    if (type === 'dine_in' && !tableNo) return error(req, res, '堂食需填写桌号')
+    if (type === 'delivery' && !addressId) return error(req, res, '配送需选择收货地址')
 
     // 数值校验
     const qty = parseInt(peopleCount) || 1
@@ -82,12 +87,13 @@ router.post('/create', (req, res) => {
     }
 
     const baseDiscount = subtotal >= 100 ? 5 : 0
-    const serviceFee = dineType === 'dine_in' ? qty * 3 : 0
+    const serviceFee = type === 'dine_in' ? qty * 3 : 0
+    const orderDeliveryFee = type === 'delivery' ? (parseFloat(deliveryFee) || 0) : 0
 
     // 积分抵扣计算（100积分=1元，最多抵扣订单金额的30%）
     let pointsDiscount = 0
     let pointsUsed = 0
-    const amountForPointsCalc = subtotal - baseDiscount - couponDiscount + serviceFee
+    const amountForPointsCalc = subtotal - baseDiscount - couponDiscount + serviceFee + orderDeliveryFee
     const maxPointsDiscount = Math.floor(amountForPointsCalc * 0.3) // 最多抵扣30%
     if (usePoints && usePoints > 0) {
       const userPoints = db.find('points', p => p.userId == userId)
@@ -129,9 +135,9 @@ router.post('/create', (req, res) => {
     const order = {
       id: orderId,
       userId: parseInt(userId),
-      tableNo: tableNo || '',
-      dineType: dineType || 'dine_in',
-      peopleCount: qty,
+      tableNo: type === 'dine_in' ? (tableNo || '') : '',
+      dineType: type,
+      peopleCount: type === 'dine_in' ? qty : 0,
       items,
       subtotal,
       discount: baseDiscount,
@@ -139,6 +145,8 @@ router.post('/create', (req, res) => {
       couponId,
       pointsDiscount,
       pointsUsed,
+      deliveryFee: orderDeliveryFee,
+      estimatedTime: type === 'delivery' ? (parseInt(estimatedTime) || 30) : 0,
       total,
       note: note || '',
       address: addressInfo,
@@ -256,14 +264,19 @@ router.post('/cancel', (req, res) => {
   }
 })
 
-// 确认取餐：ready → completed
+// 确认取餐：ready → completed（堂食/自提）
 router.post('/complete', (req, res) => {
   try {
     const { id } = req.body
     if (!id) return error(req, res, '缺少 id')
     const order = db.find('orders', o => o.id == id)
     if (!order) return error(req, res, '订单不存在', 404)
-    if (order.status !== 'ready') return error(req, res, '当前状态不可完成')
+    // 堂食/自提从 ready 完成；配送订单需从 delivering 完成
+    if (order.dineType === 'delivery') {
+      if (order.status !== 'delivering') return error(req, res, '配送订单需先确认配送中')
+    } else {
+      if (order.status !== 'ready') return error(req, res, '当前状态不可完成')
+    }
     db.update('orders', o => o.id == id, o => { o.status = 'completed' })
     order.status = 'completed'
 
@@ -276,6 +289,76 @@ router.post('/complete', (req, res) => {
     success(res, order)
   } catch (err) {
     console.error('[order/complete]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
+  }
+})
+
+// 骑手取餐：ready → delivering（仅配送订单）
+router.post('/delivering', (req, res) => {
+  try {
+    const { id } = req.body
+    if (!id) return error(req, res, '缺少 id')
+    const order = db.find('orders', o => o.id == id)
+    if (!order) return error(req, res, '订单不存在', 404)
+    if (order.dineType !== 'delivery') return error(req, res, '非配送订单不可执行此操作')
+    if (order.status !== 'ready') return error(req, res, '当前状态不可配送')
+
+    // 生成模拟骑手信息
+    const riders = [
+      { name: '王师傅', phone: '13812345678' },
+      { name: '李师傅', phone: '13987654321' },
+      { name: '张师傅', phone: '13611223344' },
+      { name: '赵师傅', phone: '13755667788' },
+      { name: '陈师傅', phone: '13599887766' }
+    ]
+    const rider = riders[Math.floor(Math.random() * riders.length)]
+
+    db.update('orders', o => o.id == id, o => {
+      o.status = 'delivering'
+      o.delivery = o.delivery || {}
+      o.delivery.riderName = rider.name
+      o.delivery.riderPhone = rider.phone
+      o.delivery.pickupTime = new Date().toISOString()
+      o.delivery.deliveringTime = new Date().toISOString()
+    })
+    order.status = 'delivering'
+    order.delivery = order.delivery || {}
+    order.delivery.riderName = rider.name
+    order.delivery.riderPhone = rider.phone
+
+    notify(req, order.userId, 'order:delivering', { orderId: id, status: 'delivering', rider })
+    success(res, order)
+  } catch (err) {
+    console.error('[order/delivering]', err)
+    res.status(500).json({ code: -1, msg: '服务器错误' })
+  }
+})
+
+// 确认收货：delivering → completed（配送订单用户确认）
+router.post('/delivered', (req, res) => {
+  try {
+    const { id } = req.body
+    if (!id) return error(req, res, '缺少 id')
+    const order = db.find('orders', o => o.id == id)
+    if (!order) return error(req, res, '订单不存在', 404)
+    if (order.status !== 'delivering') return error(req, res, '当前状态不可确认收货')
+
+    db.update('orders', o => o.id == id, o => {
+      o.status = 'completed'
+      if (o.delivery) o.delivery.deliveredTime = new Date().toISOString()
+    })
+    order.status = 'completed'
+    if (order.delivery) order.delivery.deliveredTime = new Date().toISOString()
+
+    // 订单完成后自动获取积分
+    if (order.total > 0) {
+      earnPoints(order.userId, Math.floor(order.total), 'order', id, '下单奖励')
+    }
+
+    notify(req, order.userId, 'order:delivered', { orderId: id, status: 'completed' })
+    success(res, order)
+  } catch (err) {
+    console.error('[order/delivered]', err)
     res.status(500).json({ code: -1, msg: '服务器错误' })
   }
 })

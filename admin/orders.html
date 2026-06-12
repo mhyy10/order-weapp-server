@@ -24,8 +24,15 @@
         <option value="pending">待接单</option>
         <option value="confirmed">制作中</option>
         <option value="ready">可取餐</option>
+        <option value="delivering">配送中</option>
         <option value="completed">已完成</option>
         <option value="cancelled">已取消</option>
+      </select>
+      <select id="dineTypeFilter" onchange="goPage(1)">
+        <option value="">全部方式</option>
+        <option value="dine_in">堂食</option>
+        <option value="takeaway">自提</option>
+        <option value="delivery">配送</option>
       </select>
       <span id="count" style="margin-left:auto;"></span>
     </div>
@@ -39,26 +46,56 @@ if (!adminToken) location.href = 'index.html';
 let currentPage = 1;
 const pageSize = 20;
 
-const statusMap = {pending:'待接单',confirmed:'制作中',ready:'可取餐',completed:'已完成',cancelled:'已取消'};
-const nextStatus = {pending:'confirmed',confirmed:'ready',ready:'completed'};
-const nextLabel = {pending:'接单',confirmed:'出餐',ready:'确认完成'};
+const statusMap = {pending:'待接单',confirmed:'制作中',ready:'可取餐',delivering:'配送中',completed:'已完成',cancelled:'已取消'};
+const dineTypeMap = {dine_in:'堂食',takeaway:'自提',delivery:'配送'};
+const dineTypeBadge = {dine_in:'badge-info',takeaway:'badge-warning',delivery:'badge-delivery'};
+const nextStatus = {pending:'confirmed',confirmed:'ready',ready:'completed',delivering:'completed'};
+const nextLabel = {pending:'接单',confirmed:'出餐',ready:'确认完成',delivering:'确认送达'};
+const deliveryNextStatus = {ready:'delivering'};
+const deliveryNextLabel = {ready:'骑手取餐'};
 
 async function goPage(page) {
   currentPage = page || 1;
   const status = document.getElementById('statusFilter').value;
+  const dineType = document.getElementById('dineTypeFilter').value;
   let url = `/admin/orders?page=${currentPage}&pageSize=${pageSize}`;
   if (status) url += `&status=${status}`;
+  if (dineType) url += `&dineType=${dineType}`;
   const data = await api('GET', url);
   document.getElementById('count').textContent = `共 ${data.total} 条订单`;
-  renderTable('order-list', ['订单号','桌号','金额','状态','菜品','时间','操作'],
+  renderTable('order-list', ['订单号','方式','桌号/地址','金额','状态','菜品','时间','操作'],
     data.list, o => {
       const items = (o.items||[]).map(i=>i.name+'×'+i.quantity).join(', ');
+      const dineTypeLabel = `<span class="badge ${dineTypeBadge[o.dineType]||'badge-info'}">${dineTypeMap[o.dineType]||o.dineType}</span>`;
+
+      // 桌号或地址
+      let locationInfo = o.tableNo || '-';
+      if (o.dineType === 'delivery' && o.address) {
+        locationInfo = `<span style="font-size:12px;" title="${o.address.province||''}${o.address.city||''}${o.address.district||''} ${o.address.detail||''}">${o.address.name} ${o.address.phone}</span>`;
+      }
+
+      // 配送费
+      let feeInfo = fmtPrice(o.total);
+      if (o.deliveryFee > 0) feeInfo += `<br><span style="color:#888;font-size:12px;">含配送费${fmtPrice(o.deliveryFee)}</span>`;
+
+      // 状态和操作
       let actions = `<span class="badge badge-${o.status}">${statusMap[o.status]||o.status}</span>`;
-      if (nextStatus[o.status]) {
+      // 配送订单的特殊操作：ready 状态可"骑手取餐"
+      if (o.dineType === 'delivery' && deliveryNextStatus[o.status]) {
+        actions += ` <button class="btn btn-sm btn-primary" onclick="updateStatus('${o.id}','${deliveryNextStatus[o.status]}')">${deliveryNextLabel[o.status]}</button>`;
+      }
+      // 通用操作
+      if (nextStatus[o.status] && !(o.dineType === 'delivery' && o.status === 'ready')) {
         actions += ` <button class="btn btn-sm btn-primary" onclick="updateStatus('${o.id}','${nextStatus[o.status]}')">${nextLabel[o.status]}</button>`;
       }
       if (o.status==='pending') actions += ` <button class="btn btn-sm btn-danger" onclick="updateStatus('${o.id}','cancelled')">取消</button>`;
-      return `<td>${o.id}</td><td>${o.tableNo||'-'}</td><td>${fmtPrice(o.total)}</td><td>${actions}</td>
+
+      // 骑手信息
+      if (o.dineType === 'delivery' && o.delivery && o.delivery.riderName) {
+        actions += `<br><span style="color:#FF6B35;font-size:12px;">🛵 ${o.delivery.riderName} ${o.delivery.riderPhone}</span>`;
+      }
+
+      return `<td>${o.id}</td><td>${dineTypeLabel}</td><td>${locationInfo}</td><td>${feeInfo}</td><td>${actions}</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${items}</td><td>${fmtDate(o.createdAt)}</td><td></td>`;
     });
   renderPagination('order-list', data.total, currentPage, pageSize, 'goPage');
@@ -69,5 +106,16 @@ function logout() { localStorage.removeItem('adminToken'); location.href = 'inde
 
 goPage(1);
 </script>
+<style>
+.badge-info { background:#e8f4fd; color:#1976d2; }
+.badge-warning { background:#fff3e0; color:#e65100; }
+.badge-delivery { background:#fce4ec; color:#c62828; }
+.badge-delivering { background:#e8f5e9; color:#2e7d32; }
+.badge-pending { background:#fff3e0; color:#e65100; }
+.badge-confirmed { background:#e3f2fd; color:#1565c0; }
+.badge-ready { background:#e8f5e9; color:#2e7d32; }
+.badge-completed { background:#f5f5f5; color:#666; }
+.badge-cancelled { background:#ffebee; color:#c62828; }
+</style>
 </body>
 </html>

@@ -153,11 +153,12 @@ router.put('/categories', (req, res) => {
 // 订单管理
 router.get('/orders', (req, res) => {
   try {
-    const { status } = req.query
+    const { status, dineType } = req.query
     const page = parseInt(req.query.page) || 1
     const pageSize = parseInt(req.query.pageSize) || 20
     let orders = db.get('orders') || []
     if (status) orders = orders.filter(o => o.status === status)
+    if (dineType) orders = orders.filter(o => o.dineType === dineType)
     orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     const total = orders.length
     const start = (page - 1) * pageSize
@@ -179,7 +180,8 @@ router.put('/orders', (req, res) => {
     const validTransitions = {
       pending: ['confirmed', 'cancelled'],
       confirmed: ['ready', 'cancelled'],
-      ready: ['completed', 'cancelled'],
+      ready: ['completed', 'delivering', 'cancelled'],
+      delivering: ['completed', 'cancelled'],
       completed: [],
       cancelled: []
     }
