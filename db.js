@@ -53,7 +53,8 @@ const DEFAULT_DB = {
       desc: '下单奖励',
       createdAt: '2026-06-11T10:00:00Z'
     }
-  ]
+  ],
+  trackEvents: []
 }
 
 class Database {

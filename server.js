@@ -37,6 +37,7 @@ app.use('/review', require('./routes/review'))
 app.use('/address', require('./routes/address'))
 app.use('/points', require('./routes/points'))
 app.use('/delivery', require('./routes/delivery'))
+app.use('/track', require('./routes/track'))
 app.use('/admin', require('./routes/admin'))
 app.use(express.static('admin'))
 
